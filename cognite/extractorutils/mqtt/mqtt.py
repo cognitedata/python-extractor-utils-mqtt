@@ -12,7 +12,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-__all__ = ["mqtt", "types", "MqttExtractor"]
+from dataclasses import dataclass
+from typing import Callable, Generic, Type, TypeVar
+import paho.mqtt.client as mqtt
 
-from . import mqtt, types
-from .extractor import MqttExtractor
+from cognite.extractorutils.mqtt.types import CdfTypes
+
+ResponseType = TypeVar("ResponseType")
+
+
+@dataclass
+class Topic(Generic[ResponseType]):
+    implementation: Callable[[ResponseType], CdfTypes]
+    topic: str
+    qos: int
+    client: mqtt.Client
+    response_type: Type[ResponseType]
