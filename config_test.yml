@@ -1,7 +1,7 @@
 source:
     client_id: "example_extractor"
     host: ${MQTT_HOST}
-    port: 4060
+    port: 1883
 
 cognite:
     # Read these from environment variables
