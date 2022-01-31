@@ -12,21 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from dataclasses import dataclass
 import json
 import math
 import threading
 import time
+from dataclasses import dataclass
 from typing import Optional
 
 from cognite.extractorutils.mqtt import MqttExtractor
 from cognite.extractorutils.mqtt.types import InsertDatapoints
+
 
 @dataclass
 class RawDatapoint:
     id: Optional[str]
     timestamp: Optional[float]
     value: Optional[float]
+
 
 event = threading.Event()
 
@@ -42,15 +44,12 @@ extractor = MqttExtractor(
 def subscribe_datapoints(dp: RawDatapoint) -> InsertDatapoints:
     if dp.id is None:
         return None
-    
-    return InsertDatapoints(
-        external_id=dp.id,
-        datapoints=[(dp.timestamp, dp.value)]
-    )
+
+    return InsertDatapoints(external_id=dp.id, datapoints=[(dp.timestamp, dp.value)])
 
 
 # Method to post datapoints to MQTT. It is here just so that this example is functional.
-def generate_dps():
+def generate_dps() -> None:
     client = extractor._create_mqtt_client("example_publisher")
 
     client.connect_async(extractor.config.source.host, extractor.config.source.port, extractor.config.source.keep_alive)
@@ -58,17 +57,15 @@ def generate_dps():
     client.loop_start()
 
     while not event.is_set():
-        raw_data = json.dumps({ "id": "sine_wave", "value": math.sin(time.time() / 10), "timestamp": time.time() * 1000 })
+        raw_data = json.dumps({"id": "sine_wave", "value": math.sin(time.time() / 10), "timestamp": time.time() * 1000})
         client.publish("mytopic", raw_data, 1)
 
         event.wait(0.5)
-    
+
     client.loop_stop()
 
-thread = threading.Thread(
-    target=generate_dps,
-    name="publish-loop"
-)
+
+thread = threading.Thread(target=generate_dps, name="publish-loop")
 
 with extractor:
     thread.start()
