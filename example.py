@@ -19,6 +19,8 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+from cognite.extractorutils.throttle import throttled_loop
+
 from cognite.extractorutils.mqtt import MqttExtractor
 from cognite.extractorutils.mqtt.types import InsertDatapoints
 
@@ -56,11 +58,9 @@ def generate_dps() -> None:
 
     client.loop_start()
 
-    while not event.is_set():
+    for _ in throttled_loop(0.5, event):
         raw_data = json.dumps({"id": "sine_wave", "value": math.sin(time.time() / 10), "timestamp": time.time() * 1000})
         client.publish("mytopic", raw_data, 1)
-
-        event.wait(0.5)
 
     client.loop_stop()
 

@@ -75,17 +75,17 @@ def on_connect(client: mqtt.Client, userdata: ClientUserData, flags: Dict[str, s
             connects.append((topic.topic, topic.qos))
         client.subscribe(connects)
     elif rc == 1:
-        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - incorrect protocol version")
+        ext.logger.error("Failed to connect to MQTT broker: Connection refused - incorrect protocol version")
     elif rc == 2:
-        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - invalid client identifier")
+        ext.logger.error("Failed to connect to MQTT broker: Connection refused - invalid client identifier")
     elif rc == 3:
-        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - server unavailable")
+        ext.logger.error("Failed to connect to MQTT broker: Connection refused - server unavailable")
     elif rc == 4:
-        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - bad username or password")
+        ext.logger.error("Failed to connect to MQTT broker: Connection refused - bad username or password")
     elif rc == 5:
-        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - not authorised")
+        ext.logger.error("Failed to connect to MQTT broker: Connection refused - not authorised")
     else:
-        ext.logger.warn("Invalid response code from connect")
+        ext.logger.error("Invalid response code from connect")
 
 
 class MqttExtractor(Extractor[MqttConfig]):
@@ -156,7 +156,7 @@ class MqttExtractor(Extractor[MqttConfig]):
         elif raw_protocol == "311" or raw_protocol == "v311" or raw_protocol == "MQTTv311":
             protocol = mqtt.MQTTv311
         else:
-            raise InvalidConfigError(f"Unknown MQTT protocol version {raw_protocol}")
+            raise InvalidConfigError(f"Unknown MQTT protocol version {raw_protocol}, legal values are 5, 31, or 311")
 
         client = mqtt.Client(client_id, protocol=protocol, transport=self.config.source.transport)
 
