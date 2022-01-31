@@ -65,7 +65,9 @@ def on_message(client: mqtt.Client, userdata: ClientUserData, msg: mqtt.MQTTMess
     userdata.extractor.handle_output(result)
 
 
-def on_connect(client: mqtt.Client, userdata: ClientUserData, flags: Dict[str, str], rc: int) -> None:
+def on_connect(
+    client: mqtt.Client, userdata: ClientUserData, flags: Dict[str, str], rc: int, properties: None = None
+) -> None:
     ext = userdata.extractor
     if rc == 0:
         ext.logger.info("Successfully connected to MQTT broker")
@@ -96,6 +98,7 @@ class MqttExtractor(Extractor[MqttConfig]):
         description: str,
         version: Optional[str] = None,
         cancelation_token: threading.Event = threading.Event(),
+        override_path: Optional[str] = None,
     ):
         super(MqttExtractor, self).__init__(
             name=name,
@@ -104,8 +107,10 @@ class MqttExtractor(Extractor[MqttConfig]):
             cancelation_token=cancelation_token,
             use_default_state_store=False,
             config_class=MqttConfig,
+            config_file_path=override_path,
         )
         self.topics: Dict[str, Topic] = {}
+        self._upload_interval = 60
 
     def topic(
         self,
@@ -170,15 +175,21 @@ class MqttExtractor(Extractor[MqttConfig]):
     def __enter__(self) -> "MqttExtractor":
         super(MqttExtractor, self).__enter__()
         self.event_queue = EventUploadQueue(
-            self.cognite_client, max_queue_size=10_000, max_upload_interval=60, trigger_log_level="INFO"
+            self.cognite_client,
+            max_queue_size=10_000,
+            max_upload_interval=self._upload_interval,
+            trigger_log_level="INFO",
         ).__enter__()
         self.raw_queue = RawUploadQueue(
-            self.cognite_client, max_queue_size=100_000, max_upload_interval=60, trigger_log_level="INFO"
+            self.cognite_client,
+            max_queue_size=100_000,
+            max_upload_interval=self._upload_interval,
+            trigger_log_level="INFO",
         ).__enter__()
         self.time_series_queue = TimeSeriesUploadQueue(
             self.cognite_client,
             max_queue_size=1_000_000,
-            max_upload_interval=60,
+            max_upload_interval=self._upload_interval,
             trigger_log_level="INFO",
             create_missing=True,
         ).__enter__()

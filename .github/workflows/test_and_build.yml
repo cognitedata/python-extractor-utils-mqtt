@@ -29,7 +29,20 @@ jobs:
     - name: Check codestyle
       run: pre-commit run --all
 
+    - name: Start Mosquitto
+      uses: namoshek/mosquitto-github-action@v1
+      with:
+        version: '1.6'
+        ports: '4060:4060'
+
     - name: Run tests
+      env:
+        COGNITE_PROJECT: opcua-interface-test
+        COGNITE_BASE_URL: "https://greenfield.cognitedata.com"
+        COGNITE_CLIENT_ID: ${{ secrets.COGNITE_CLIENT_ID }}
+        COGNITE_TOKEN_URL: ${{ secrets.COGNITE_TOKEN_URL }}
+        COGNITE_CLIENT_SECRET: ${{ secrets.COGNITE_CLIENT_SECRET }}
+        MQTT_HOST: mosquitto
       run: bash run_tests.sh
 
     - name: Build package
