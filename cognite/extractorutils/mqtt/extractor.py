@@ -12,23 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from dataclasses import dataclass
-from distutils.command.clean import clean
 import json
 import threading
+from dataclasses import dataclass
 from types import TracebackType
-from typing import Callable, Dict, Iterable, List, Optional, Type, Union
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Type
+
+import dacite
+import paho.mqtt.client as mqtt
 from cognite.extractorutils.base import Extractor
 from cognite.extractorutils.configtools import BaseConfig
-from cognite.extractorutils.uploader import EventUploadQueue, RawUploadQueue, TimeSeriesUploadQueue
 from cognite.extractorutils.exceptions import InvalidConfigError
-import dacite
+from cognite.extractorutils.uploader import EventUploadQueue, RawUploadQueue, TimeSeriesUploadQueue
 from more_itertools import peekable
 
-import paho.mqtt.client as mqtt
-
-from cognite.extractorutils.mqtt.mqtt import Topic
+from cognite.extractorutils.mqtt.mqtt import ResponseType, Topic
 from cognite.extractorutils.mqtt.types import CdfTypes, Event, InsertDatapoints, RawRow
+
 
 @dataclass
 class SourceConfig:
@@ -44,12 +44,48 @@ class SourceConfig:
 
 @dataclass
 class MqttConfig(BaseConfig):
-    source: SourceConfig = SourceConfig()
+    source: SourceConfig
 
 
 @dataclass
 class ClientUserData:
     extractor: "MqttExtractor"
+
+
+def on_message(client: mqtt.Client, userdata: ClientUserData, msg: mqtt.MQTTMessage) -> None:
+    userdata.extractor.logger.debug("Received %s bytes on topic: %s", len(msg.payload), msg.topic)
+    topic = userdata.extractor.topics.get(msg.topic, None)
+    if topic is None:
+        return
+
+    raw_payload = json.loads(msg.payload)
+    payload = dacite.from_dict(topic.response_type, raw_payload)
+    result = topic.implementation(payload)
+
+    userdata.extractor.handle_output(result)
+
+
+def on_connect(client: mqtt.Client, userdata: ClientUserData, flags: Dict[str, str], rc: int) -> None:
+    ext = userdata.extractor
+    if rc == 0:
+        ext.logger.info("Successfully connected to MQTT broker")
+        connects: List[Tuple[str, int]] = []
+        for topic in ext.topics.values():
+            ext.logger.info("Subscribing to messages on topic %s", topic.topic)
+            connects.append((topic.topic, topic.qos))
+        client.subscribe(connects)
+    elif rc == 1:
+        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - incorrect protocol version")
+    elif rc == 2:
+        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - invalid client identifier")
+    elif rc == 3:
+        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - server unavailable")
+    elif rc == 4:
+        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - bad username or password")
+    elif rc == 5:
+        ext.logger.warn("Failed to connect to MQTT broker: Connection refused - not authorised")
+    else:
+        ext.logger.warn("Invalid response code from connect")
 
 
 class MqttExtractor(Extractor[MqttConfig]):
@@ -59,7 +95,6 @@ class MqttExtractor(Extractor[MqttConfig]):
         name: str,
         description: str,
         version: Optional[str] = None,
-        base_url: Optional[str],
         cancelation_token: threading.Event = threading.Event(),
     ):
         super(MqttExtractor, self).__init__(
@@ -70,15 +105,30 @@ class MqttExtractor(Extractor[MqttConfig]):
             use_default_state_store=False,
             config_class=MqttConfig,
         )
-        self.base_url = base_url or ""
         self.topics: Dict[str, Topic] = {}
-    
+
+    def topic(
+        self,
+        *,
+        topic: str,
+        qos: int,
+        response_type: Type[ResponseType],
+    ) -> Callable[[Callable[[ResponseType], CdfTypes]], Callable[[ResponseType], CdfTypes]]:
+        def decorator(func: Callable[[ResponseType], CdfTypes]) -> Callable[[ResponseType], CdfTypes]:
+            self.topics[topic] = Topic(implementation=func, topic=topic, qos=qos, response_type=response_type)
+            return func
+
+        return decorator
+
     def handle_output(self, output: CdfTypes) -> None:
         if not isinstance(output, Iterable):
             output = [output]
 
         peekable_output = peekable(output)
-        peek = peekable_output.peek()
+        peek = peekable_output.peek(None)
+
+        if peek is None:
+            return
 
         if isinstance(peek, Event):
             for event in peekable_output:
@@ -94,7 +144,29 @@ class MqttExtractor(Extractor[MqttConfig]):
                 )
         else:
             raise ValueError(f"Unexpected type: {type(peek)}")
-    
+
+    def _create_mqtt_client(self, client_id: str) -> mqtt.Client:
+        protocol = 0
+        raw_protocol = self.config.source.version
+
+        if raw_protocol == "5" or raw_protocol == "v5" or raw_protocol == "MQTTv5":
+            protocol = mqtt.MQTTv5
+        elif raw_protocol == "31" or raw_protocol == "v31" or raw_protocol == "MQTTv31":
+            protocol = mqtt.MQTTv31
+        elif raw_protocol == "311" or raw_protocol == "v311" or raw_protocol == "MQTTv311":
+            protocol = mqtt.MQTTv311
+        else:
+            raise InvalidConfigError(f"Unknown MQTT protocol version {raw_protocol}")
+
+        client = mqtt.Client(client_id, protocol=protocol, transport=self.config.source.transport)
+
+        client.user_data_set(ClientUserData(extractor=self))
+
+        if self.config.source.username:
+            client.username_pw_set(self.config.source.username, self.config.source.password)
+
+        return client
+
     def __enter__(self) -> "MqttExtractor":
         super(MqttExtractor, self).__enter__()
         self.event_queue = EventUploadQueue(
@@ -111,29 +183,8 @@ class MqttExtractor(Extractor[MqttConfig]):
             create_missing=True,
         ).__enter__()
 
-        protocol = 0
-        raw_protocol = self.config.source.version
+        self.client: mqtt.Client = self._create_mqtt_client(self.config.source.client_id)
 
-        if raw_protocol == "5" or raw_protocol == "v5" or raw_protocol == "MQTTv5":
-            protocol = mqtt.MQTTv5
-        elif raw_protocol == "31" or raw_protocol == "v31" or raw_protocol == "MQTTv31":
-            protocol = mqtt.MQTTv31
-        elif raw_protocol == "311" or raw_protocol == "v311" or raw_protocol == "MQTTv311":
-            protocol = mqtt.MQTTv311
-        else:
-            raise InvalidConfigError(f"Unknown MQTT protocol version {raw_protocol}")
-
-        self.client = mqtt.Client(
-            self.config.source.client_id,
-            clean_session=True,
-            protocol=protocol,
-            transport=self.config.source.transport)
-
-        self.client.user_data_set(ClientUserData(extractor=self))
-
-        if self.config.source.username:
-            self.client.username_pw_set(self.config.source.username, self.config.source.password)
-            
         return self
 
     def __exit__(
@@ -144,25 +195,12 @@ class MqttExtractor(Extractor[MqttConfig]):
         self.time_series_queue.__exit__(exc_type, exc_val, exc_tb)
         return super(MqttExtractor, self).__exit__(exc_type, exc_val, exc_tb)
 
-    def on_message(client: mqtt.Client, userdata: ClientUserData, msg: mqtt.MQTTMessage):
-        topic = userdata.extractor.topics.get(msg.topic, None)
-        if topic is None:
-            return
-
-        raw_payload = json.loads(msg.payload)
-        payload = dacite.from_dict(topic.response_type, raw_payload)
-        result = topic.implementation(payload)
-
-        userdata.extractor.handle_output(result)
-
     def run(self) -> None:
         if not self.started:
             raise ValueError("You must run the extractor in a context manager")
 
-        for topic in self.topics:
-            self.client.subscribe(topic.topic, topic.qos)
-
-        self.client.on_message = self.on_message
+        self.client.on_message = on_message
+        self.client.on_connect = on_connect
 
         self.client.connect_async(self.config.source.host, self.config.source.port, self.config.source.keep_alive)
 

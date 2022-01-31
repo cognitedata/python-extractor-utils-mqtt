@@ -24,6 +24,7 @@ except ImportError:
     # Backport for python < 3.10
     from typing_extensions import TypeAlias
 
+
 class RawRow:
     def __init__(self, db_name: str, table_name: str, row: Union[_Row, Iterable[_Row]]):
         self.db_name = db_name
@@ -43,7 +44,7 @@ class InsertDatapoints:
         *,
         id: Optional[int] = None,
         external_id: Optional[str] = None,
-        datapoints: Union[List[Tuple[TimeStamp, float]], Tuple[TimeStamp, str]],
+        datapoints: Union[List[Tuple[TimeStamp, float]], List[Tuple[TimeStamp, str]]],
     ):
         self.id = id
         self.external_id = external_id

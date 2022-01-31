@@ -14,7 +14,6 @@
 
 from dataclasses import dataclass
 from typing import Callable, Generic, Type, TypeVar
-import paho.mqtt.client as mqtt
 
 from cognite.extractorutils.mqtt.types import CdfTypes
 
@@ -26,5 +25,4 @@ class Topic(Generic[ResponseType]):
     implementation: Callable[[ResponseType], CdfTypes]
     topic: str
     qos: int
-    client: mqtt.Client
     response_type: Type[ResponseType]
