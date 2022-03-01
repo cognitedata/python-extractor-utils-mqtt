@@ -15,19 +15,15 @@
 import json
 import threading
 from dataclasses import dataclass
-from types import TracebackType
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, Type
+from typing import Callable, Dict, List, Optional, Tuple, Type
 
 import dacite
 import paho.mqtt.client as mqtt
-from cognite.extractorutils.base import Extractor
-from cognite.extractorutils.configtools import BaseConfig
 from cognite.extractorutils.exceptions import InvalidConfigError
-from cognite.extractorutils.uploader import EventUploadQueue, RawUploadQueue, TimeSeriesUploadQueue
-from more_itertools import peekable
+from cognite.extractorutils.uploader_extractor import UploaderExtractor, UploaderExtractorConfig
+from cognite.extractorutils.uploader_types import CdfTypes
 
 from cognite.extractorutils.mqtt.mqtt import ResponseType, Topic
-from cognite.extractorutils.mqtt.types import CdfTypes, Event, InsertDatapoints, RawRow
 
 
 @dataclass
@@ -43,7 +39,7 @@ class SourceConfig:
 
 
 @dataclass
-class MqttConfig(BaseConfig):
+class MqttConfig(UploaderExtractorConfig):
     source: SourceConfig
 
 
@@ -90,7 +86,7 @@ def on_connect(
         ext.logger.error("Invalid response code from connect")
 
 
-class MqttExtractor(Extractor[MqttConfig]):
+class MqttExtractor(UploaderExtractor[MqttConfig]):
     def __init__(
         self,
         *,
@@ -125,31 +121,6 @@ class MqttExtractor(Extractor[MqttConfig]):
 
         return decorator
 
-    def handle_output(self, output: CdfTypes) -> None:
-        if not isinstance(output, Iterable):
-            output = [output]
-
-        peekable_output = peekable(output)
-        peek = peekable_output.peek(None)
-
-        if peek is None:
-            return
-
-        if isinstance(peek, Event):
-            for event in peekable_output:
-                self.event_queue.add_to_upload_queue(event)
-        elif isinstance(peek, RawRow):
-            for raw_row in peekable_output:
-                for row in raw_row.rows:
-                    self.raw_queue.add_to_upload_queue(database=raw_row.db_name, table=raw_row.table_name, raw_row=row)
-        elif isinstance(peek, InsertDatapoints):
-            for datapoints in peekable_output:
-                self.time_series_queue.add_to_upload_queue(
-                    id=datapoints.id, external_id=datapoints.external_id, datapoints=datapoints.datapoints
-                )
-        else:
-            raise ValueError(f"Unexpected type: {type(peek)}")
-
     def _create_mqtt_client(self, client_id: str) -> mqtt.Client:
         protocol = 0
         raw_protocol = self.config.source.version
@@ -174,37 +145,10 @@ class MqttExtractor(Extractor[MqttConfig]):
 
     def __enter__(self) -> "MqttExtractor":
         super(MqttExtractor, self).__enter__()
-        self.event_queue = EventUploadQueue(
-            self.cognite_client,
-            max_queue_size=10_000,
-            max_upload_interval=self._upload_interval,
-            trigger_log_level="INFO",
-        ).__enter__()
-        self.raw_queue = RawUploadQueue(
-            self.cognite_client,
-            max_queue_size=100_000,
-            max_upload_interval=self._upload_interval,
-            trigger_log_level="INFO",
-        ).__enter__()
-        self.time_series_queue = TimeSeriesUploadQueue(
-            self.cognite_client,
-            max_queue_size=1_000_000,
-            max_upload_interval=self._upload_interval,
-            trigger_log_level="INFO",
-            create_missing=True,
-        ).__enter__()
 
         self.client: mqtt.Client = self._create_mqtt_client(self.config.source.client_id)
 
         return self
-
-    def __exit__(
-        self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
-    ) -> bool:
-        self.event_queue.__exit__(exc_type, exc_val, exc_tb)
-        self.raw_queue.__exit__(exc_type, exc_val, exc_tb)
-        self.time_series_queue.__exit__(exc_type, exc_val, exc_tb)
-        return super(MqttExtractor, self).__exit__(exc_type, exc_val, exc_tb)
 
     def run(self) -> None:
         if not self.started:

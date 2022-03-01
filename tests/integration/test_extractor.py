@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from cognite.extractorutils.throttle import throttled_loop
+from cognite.extractorutils.uploader_types import InsertDatapoints
 
 from cognite.extractorutils.mqtt.extractor import MqttExtractor
-from cognite.extractorutils.mqtt.types import InsertDatapoints
 
 
 @dataclass

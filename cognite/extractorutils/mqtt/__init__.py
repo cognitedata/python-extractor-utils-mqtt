@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-__all__ = ["mqtt", "types", "MqttExtractor"]
+__all__ = ["mqtt", "MqttExtractor"]
 
-from . import mqtt, types
+from . import mqtt
 from .extractor import MqttExtractor

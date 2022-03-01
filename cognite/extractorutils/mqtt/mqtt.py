@@ -15,7 +15,7 @@
 from dataclasses import dataclass
 from typing import Callable, Generic, Type, TypeVar
 
-from cognite.extractorutils.mqtt.types import CdfTypes
+from cognite.extractorutils.uploader_types import CdfTypes
 
 ResponseType = TypeVar("ResponseType")
 

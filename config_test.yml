@@ -20,3 +20,5 @@ logger:
     console:
         level: DEBUG
 
+queues:
+    timeseries-size: 10000
