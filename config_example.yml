@@ -19,3 +19,8 @@ logger:
     console:
         level: DEBUG
 
+queues:
+    event-size: 10000
+    raw-size: 100000
+    timeseries-size: 1000000
+    upload-interval: 60
