@@ -1,0 +1,51 @@
+name: release
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.9
+
+    - name: Install dependencies
+      run: |
+        python3 -m pip install --upgrade pip poetry
+        poetry config virtualenvs.create false
+        poetry lock
+        poetry install
+    - name: Check codestyle
+      run: pre-commit run --all
+
+    - name: Start Mosquitto
+      uses: namoshek/mosquitto-github-action@v1
+      with:
+        version: '1.6'
+        ports: '1883:1883'
+
+    - name: Run tests
+      env:
+        COGNITE_PROJECT: opcua-interface-test
+        COGNITE_BASE_URL: "https://greenfield.cognitedata.com"
+        COGNITE_CLIENT_ID: ${{ secrets.COGNITE_CLIENT_ID }}
+        COGNITE_TOKEN_URL: ${{ secrets.COGNITE_TOKEN_URL }}
+        COGNITE_CLIENT_SECRET: ${{ secrets.COGNITE_CLIENT_SECRET }}
+        MQTT_HOST: localhost
+      run: bash run_tests.sh
+
+    - name: Build package
+      run: poetry build
+
+    - name: Release to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: twine upload --verbose dist/* || echo 'Version exists'
