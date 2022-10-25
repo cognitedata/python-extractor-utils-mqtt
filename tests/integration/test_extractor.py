@@ -34,7 +34,7 @@ class RawDatapoint:
     value: Optional[float]
 
 
-test_id = random.randint(0, 2 ** 31)
+test_id = random.randint(0, 2**31)
 
 
 class IntegrationTests(unittest.TestCase):
