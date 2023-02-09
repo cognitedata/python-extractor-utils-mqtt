@@ -38,7 +38,7 @@ extractor = MqttExtractor(
     name="DemoMqttExtractor",
     description="Read some datapoints over MQTT",
     version="1.0.0",
-    cancelation_token=event,
+    cancellation_token=event,
 )
 
 

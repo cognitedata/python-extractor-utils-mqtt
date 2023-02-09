@@ -46,7 +46,7 @@ class IntegrationTests(unittest.TestCase):
             name="test_mqtt_extractor",
             description="Test mqtt extractor",
             version="1.0.0",
-            cancelation_token=self.event,
+            cancellation_token=self.event,
             override_path="config_test.yml",
         )
         self.extractor._upload_interval = 1
