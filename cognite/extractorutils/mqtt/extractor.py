@@ -93,14 +93,14 @@ class MqttExtractor(UploaderExtractor[MqttConfig]):
         name: str,
         description: str,
         version: Optional[str] = None,
-        cancelation_token: threading.Event = threading.Event(),
+        cancellation_token: threading.Event = threading.Event(),
         override_path: Optional[str] = None,
     ):
         super(MqttExtractor, self).__init__(
             name=name,
             description=description,
             version=version,
-            cancelation_token=cancelation_token,
+            cancellation_token=cancellation_token,
             use_default_state_store=False,
             config_class=MqttConfig,
             config_file_path=override_path,
@@ -161,6 +161,6 @@ class MqttExtractor(UploaderExtractor[MqttConfig]):
 
         self.client.loop_start()
 
-        self.cancelation_token.wait()
+        self.cancellation_token.wait()
 
         self.client.loop_stop()
